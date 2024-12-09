@@ -8,7 +8,7 @@ class Person():
         self.drinks = ""
         self.pets = ""
         self.religion = ""
-        self.description = ""
+        self.freestyle = ""
         self.age = ""
         self.smokes = ""
        
@@ -55,7 +55,7 @@ class Person():
     def setSmokes(self, smokes):
         self.smokes = smokes
 
-    def generateDescription(self): 
+    def __createFreestyle(self): 
         if (len(self.essays) == 0):
             return
 
@@ -72,7 +72,7 @@ class Person():
             if essay != "":
                 self.essays.append(essay)
 
-    def generateQuery(self): 
+    def generateDescription(self): 
         self.query = ""
         
         if self.gender != "" and self.age != "":
@@ -98,7 +98,7 @@ class Person():
         if self.religion != "" and random.random() <= self.includeReligion:
             self.query += "Their religion is " + self.religion + ". "
             
-        self.generateDescription()
+        self.__createFreestyle()
         if self.description != "":
             self.query += "They included the following essay responses for unknown prompts..." + self.description + ". "
         return self.query

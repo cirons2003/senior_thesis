@@ -15,7 +15,7 @@ class EmbeddingAgent(Protocol):
 class ClusteringAgent(Protocol):
     name: str
 
-    def train(self, batch: list[list[int]]) -> None:
+    def batch_train(self, batch: list[list[int]]) -> None:
         ...
 
     def get_centers(self) -> list[list[int]]:

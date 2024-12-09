@@ -22,11 +22,22 @@ class Embeddings():
         self.table_name = table_name
         self.conn = conn
 
-    def insertEmbedding(self, person_index: int, embedding: list[int]) -> None: 
+    def insertEmbedding(self, person_index: int, embedding: list[int], embedding_id: int, total_embeddings: int, epoch: int) -> None: 
             cursor = self.conn.cursor()
 
             embedding_blob = pickle.dumps(embedding)
 
-            cursor.execute(f"INSERT INTO persons (person_id, embedding) VALUES ({person_index}, {embedding_blob})")
+            cursor.execute(f"INSERT INTO persons (person_id, embedding_id, total_embeddings, embedding) VALUES ({person_index}, {embedding_id}, {total_embeddings}, {embedding_blob})")
+    
+    def getEmbeddingBatch(self, start_row: int, batch_size: int, epoch: int) -> tuple[int, list[list[int]]]:
+        cursor = self.conn.cursor()
 
+        cursor.execute(f"SELECT id, embedding FROM {self.table_name} WHERE id >= {start_row} AND embedding_id = {epoch} % total_embeddings LIMIT {batch_size}")
+        blobbed_embeddings = cursor.fetchall()
+
+        embeddings = [pickle.loads(blob) for _, blob in blobbed_embeddings]
+    
+        last_id = embeddings[-1][0]
+        
+        return last_id, embeddings
     
