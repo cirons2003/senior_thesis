@@ -27,7 +27,7 @@ class ClusteringAgent(Protocol):
     def unlock(self) -> None:
         ...
 
-    def classify(self, embedding: list[int]) -> int:
+    def generate_result(embeddings: list[list[int]]):
         ...
 
 

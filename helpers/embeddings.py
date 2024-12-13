@@ -27,12 +27,15 @@ class Embeddings():
 
             embedding_blob = pickle.dumps(embedding)
 
-            cursor.execute(f"INSERT INTO persons (person_id, embedding_id, total_embeddings, embedding) VALUES ({person_index}, {embedding_id}, {total_embeddings}, {embedding_blob})")
+            cursor.execute(f"INSERT INTO persons (person_id, embedding_id, total_embeddings, embedding) 
+                           VALUES ({person_index}, {embedding_id}, {total_embeddings}, {embedding_blob})")
     
     def getEmbeddingBatch(self, start_row: int, batch_size: int, epoch: int) -> tuple[int, list[list[int]]]:
         cursor = self.conn.cursor()
 
-        cursor.execute(f"SELECT id, embedding FROM {self.table_name} WHERE id >= {start_row} AND embedding_id = {epoch} % total_embeddings LIMIT {batch_size}")
+        cursor.execute(f"SELECT id, embedding FROM {self.table_name} 
+                       WHERE id >= {start_row} AND embedding_id = {epoch} % total_embeddings LIMIT {batch_size}")
+        
         blobbed_embeddings = cursor.fetchall()
 
         embeddings = [pickle.loads(blob) for _, blob in blobbed_embeddings]
@@ -41,3 +44,10 @@ class Embeddings():
         
         return last_id, embeddings
     
+    def getPersonEmbeddingsBatch(self, start_id: int, batch_size: int) -> list[tuple[int, int, list[int]]]:
+        cursor = self.conn.cursor()
+
+        cursor.execute(f"SELECT person_id embedding_count embedding FROM {self.table_name} 
+                       WHERE person_id >= {start_id} AND person_id < {start_id + batch_size} ORDER BY person_ids ASC")
+        
+        return [(tup[0], tup[1], pickle.loads(tup[2])) for tup in cursor.fetchall()]

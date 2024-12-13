@@ -15,7 +15,8 @@ def initialize_database_tables (conn: sqlite3.Connection):
             trial_name TEXT UNIQUE NOT NULL,
             current_stage INTEGER DEFAULT 0,
             current_index INTEGER DEFAULT 0,
-            current_epoch INTEGER DEFAULT 0
+            current_epoch INTEGER DEFAULT 0,
+            person_count INTEGER DEFAULT 0,
         )
         """
     ]
@@ -93,7 +94,7 @@ def initialize_results_table(conn: sqlite3.Connection, table_name: str) -> None:
     CREATE TABLE IF NOT EXISTS {table_name} (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         person_id INTEGER NOT NULL,              
-        vector BLOB NOT NULL,                    
+        result BLOB NOT NULL,                    
         FOREIGN KEY (person_id) REFERENCES persons (id)
             ON DELETE CASCADE                    
     )

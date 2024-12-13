@@ -21,6 +21,9 @@ class MetaData():
     
     def get_current_epoch(self) -> int:
         return self.__select_row("current_epoch")
+
+    def get_person_count(self) -> int:
+        return self.__select_row("person_count")
     
     def update_current_index(self, newIndex: int) -> None:
         cursor = self.__conn.cursor()
@@ -46,3 +49,8 @@ class MetaData():
         assert(new_epoch == curr_stage + 1)\
         
         cursor.execute(f"UPDATE metadata SET current_epoch = {new_epoch} WHERE trial_name = {self.__trial_name}")
+
+    def update_person_count(self, new_person_count: int):
+        cursor = self.__conn.cursor()
+
+        cursor.execute(f"UPDATE metadata SET person_count = {new_person_count} WHERE trial_name = {self.__trial_name}")
