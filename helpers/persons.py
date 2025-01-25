@@ -5,10 +5,9 @@ class Persons():
     def __init__(self, conn: sqlite3.Connection) -> None:   
         self.conn = conn 
 
-    def insertDescription(self, row_index: int, description: str) -> None:
+    def insertDescription(self, person_id: int, description: str) -> None:
         cursor = self.conn.cursor()
-        cursor.execute(f"INSERT OR REPLACE INTO persons (id, description) VALUES ({row_index}, {description})")
-
+        cursor.execute(f"INSERT OR REPLACE INTO persons (id, description) VALUES (?, ?)", (person_id, description, ))
 
     def getDescriptionBatch(self, row_index: int, batch_size: int) -> list[list]:
         cursor = self.conn.cursor()

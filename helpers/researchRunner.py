@@ -1,250 +1,202 @@
 import sqlite3
 from enum import Enum
 import random
+from typing import List
 
 from .metadata import MetaData
 from .persons import Persons
 from .embeddings import Embeddings
 from .results import Results
-from .prototypes import *
-from .setup import initialize_embeddings_table, initialize_centers_table, initialize_results_table
+from .prototypes import ChunkingAgent, EmbeddingAgent, ClusteringAgent
+from .setup import initialize_embeddings_table, initialize_centers_table, initialize_results_table, initialize_index_table
+from .inverseIndex import InverseIndex
+from collections import Counter
 
 class Stage(Enum):
-    GENERATING_EMBEDDINGS = 1
-    CLUSTERING = 2
-    COMPUTING_RESULTS = 3
-    DONE = 4
+    GENERATING_EMBEDDINGS = 0
+    COMPUTING_RESULTS = 1
+    INDEXING = 2
+    DONE = 3
 
-class ResearchRunner():
-    def __init__(self, database_path, trial_name, chunking_agent, embedding_agent, clustering_agent):
-        self.error = None 
+class ResearchRunner:
+    metadata: MetaData
+    persons: Persons
+    embeddings: Embeddings
+    results: Results
 
-        self.__database_path: str = database_path
-        self.__chunking_agent: ChunkingAgent = chunking_agent
-        self.__embedding_agent: EmbeddingAgent = embedding_agent
-        self.__clustering_agent: ClusteringAgent = clustering_agent
-        
-        self.conn = None
-        self.__initializeConnection()
+    def __init__(self, conn: sqlite3.Connection, trial_name: str, chunking_agent: ChunkingAgent, embedding_agent: EmbeddingAgent, clustering_agent: ClusteringAgent):
+        self.error = None
 
-        initialize_embeddings_table(self.conn, self.get_embedding_table_name())
-        initialize_centers_table(self.conn, self.get_centers_table_name())
-        initialize_results_table(self.conn, self.get_results_table_name())
 
-        self.metadata: MetaData = MetaData(self.conn, trial_name)
-        self.__current_stage: int = self.metadata.get_current_stage()
-        self.__current_index: int = self.metadata.get_current_index()
-        self.__current_epoch: int = self.metadata.get_current_epoch()
-        self.__person_count: int = self.metadata.get_person_count()
+        # Initialize core components
+        self.chunking_agent = chunking_agent
+        self.embedding_agent = embedding_agent
+        self.clustering_agent = clustering_agent
 
-        self.persons: Persons = Persons(self.conn)
-        self.embeddings: Embeddings = Embeddings(self.conn, self.get_embedding_table_name())
-        self.results: Results = Results(self.conn, self.get_results_table_name())
-        
-    def __initializeConnection(self): 
-        self.conn = sqlite3.connect(self.__database_path)
+        # Database connection setup
+        self.conn = conn
         self.conn.execute("PRAGMA foreign_keys = ON;")
-        self.conn.execute("PRAGMA journal_mode = WAL;")  
-        self.conn.execute("PRAGMA synchronous = NORMAL;")  
+        self.conn.execute("PRAGMA journal_mode = WAL;")
         self.conn.execute("PRAGMA cache_size = -2000;")
-    
-    def __closeConnection(self): 
-        if self.conn.in_transaction:
-            self.conn.rollback()
-        self.conn.close()
-        self.conn = None
-    
-    def flushErrors(self):
-        print(self.error)
-    
-    def __generateEmbeddings(self):
-        if self.__current_stage != Stage.GENERATING_EMBEDDINGS.value:
-            return
 
+        # Initialize tables and metadata
+        initialize_embeddings_table(self.conn, self._get_embedding_table_name())
+        #initialize_centers_table(self.conn, self._get_centers_table_name())
+        initialize_results_table(self.conn, self._get_results_table_name())
+        initialize_index_table(self.conn, self._get_index_table_name())
+
+        self.metadata = MetaData(self.conn, trial_name)
+        self.persons = Persons(self.conn)
+        self.embeddings = Embeddings(self.conn, self._get_embedding_table_name())
+        if self.metadata.get_embeddings_table_name() != '':
+            self.metadata.update_embeddings_table_name(self._get_embedding_table_name())
+        #self.centers = Centers(self.conn, self._get_centers_table_name(), clustering_agent.topic_count)
+        self.results = Results(self.conn, self._get_results_table_name())
+        if self.metadata.get_results_table_name() != '':
+            self.metadata.update_results_table_name(self._get_results_table_name())
+
+        self.inverseIndex = InverseIndex(conn, self._get_index_table_name())
+        if self.metadata.get_index_table_name() != '':
+            self.metadata.update_index_table_name(self._get_index_table_name())
+
+        self.current_stage = Stage(self.metadata.get_current_stage())
+        self.current_index = self.metadata.get_current_index()
+        self.person_count = self.metadata.get_person_count()
+
+        # Validate clustering agent dimensions
+        self.metadata.update_topic_count(clustering_agent.topic_count)
+
+    def _get_embedding_table_name(self):
+        return f"embeddings_{self.chunking_agent.name}_{self.embedding_agent.name}"
+
+    #def _get_centers_table_name(self):
+    #    return f"centers_{self.chunking_agent.name}_{self.embedding_agent.name}_{self.clustering_agent.name}"
+
+    def _get_results_table_name(self):
+        return f"results_{self.chunking_agent.name}_{self.embedding_agent.name}_{self.clustering_agent.name}"
+
+    def _get_index_table_name(self):
+        return f"indexes_{self.chunking_agent.name}_{self.embedding_agent.name}_{self.clustering_agent.name}"
+
+    def _process_batch(self, batch: List[tuple], process_func):
+        """Generic batch processor."""
+        for item in batch:
+            process_func(item)
+
+    def _generate_embeddings_for_person(self, person_id: int, description: str):
+        chunks = self.chunking_agent.chunk(description)
+        random.shuffle(chunks)  # Eliminate positional correlations
+
+        for idx, chunk in enumerate(chunks):
+            embedding = self.embedding_agent.embed(chunk)
+            self.embeddings.insertEmbedding(person_id, embedding, idx, len(chunks))
+
+    def _generate_embeddings(self):
         batch_size = 1000
-
-        currIndex = self.__current_index
-        while(True):
-            batch = self.persons.getDescriptionBatch(currIndex, batch_size)
-
-            if (len(batch) == 0):
-                break 
-            
-            print(f"Generating embeddings for person {currIndex}-{currIndex + batch_size - 1}")
-
-            for row, desc in batch:
-                assert(row == currIndex)
-
-                chunks = self.__chunking_agent.chunk(desc)
-                total_embeddings = len(chunks)
-                embedding_id = 0
-                random.shuffle(chunks) #Eliminate positional correlations
-
-                for chunk in chunks: 
-                    embedding = self.__embedding_agent.embed(chunk)
-                    self.embeddings.insertEmbedding(currIndex, embedding, embedding_id, total_embeddings)
-                    embedding_id += 1
-
-                currIndex += 1
-                
-            self.metadata.update_current_index(currIndex)
-            self.conn.commit()
-            self.__current_index = currIndex
-
-        self.metadata.update_person_count(currIndex)
-        self.metadata.update_current_stage(self.__current_stage + 1)
-        self.metadata.update_current_index(0)
-        self.__person_count = currIndex
-        self.__current_stage += 1
-        self.__current_index = 0
-        self.conn.commit()
-        
-
-    def __train_clusters(self): 
-        if self.__current_stage != Stage.CLUSTERING.value: 
-            return 
-        
-        num_epochs = 30
-        batch_size = 1000
-
-        curr_epoch = self.__current_epoch
-        curr_index = self.__current_index
-        while curr_epoch < num_epochs:
-            while(True):
-                last_id, embedding_batch = self.embeddings.getEmbeddingBatch(curr_index, batch_size, curr_epoch)
-                if len(embedding_batch) == 0:
-                    break
-
-                self.__clustering_agent.batch_train(embedding_batch)
-
-                curr_index = last_id + 1
-                self.metadata.update_current_index(curr_index)
-                self.__current_index = curr_index
-                self.conn.commit()
-            
-            print(f"Finished epoch {curr_epoch}.")
-            curr_epoch += 1
-            curr_index = 0
-            self.metadata.update_current_epoch(curr_epoch)
-            self.metadata.update_current_index(curr_index)
-            self.__current_epoch = curr_epoch
-            self.__current_index = curr_index
-            self.conn.commit()
-        
-        self.metadata.update_current_stage(self.__current_stage + 1)
-        self.metadata.update_current_index(0)
-        self.metadata.update_current_epoch(0)
-        self.__current_stage += 1
-        self.__current_index = 0
-        self.__current_epoch = 0
-        self.conn.commit()
- 
-    def __compute_results(self):
-        if self.__current_stage != Stage.COMPUTING_RESULTS.value:
-            return 
-        
-        batch_size = 100
-
-        curr_index = self.__current_index
-
         while True:
-            embedding_batch = self.embeddings.getPersonEmbeddingsBatch(curr_index, batch_size)
+            batch = self.persons.getDescriptionBatch(self.current_index, batch_size)
+            if not batch:
+                break
 
-            batch_size = len(embedding_batch)
-            if batch_size == 0:
+            self._process_batch(batch, lambda person: self._generate_embeddings_for_person(*person))
+            self.current_index += len(batch)
+            self.metadata.update_current_index(self.current_index)
+            self.conn.commit()
+
+        # Update metadata and move to the next stage
+        self.person_count = self.current_index
+        self.metadata.update_person_count(self.person_count)
+        self._advance_stage()
+
+    def _train_clusters(self):
+        if not self.clustering_agent.is_finished_training():
+            self.clustering_agent.pass_embeddings(self.embeddings)
+            self.clustering_agent.train()
+
+    def _compute_results_for_person(self, person_id: int, embeddings: List[List[int]]):
+        result = self.clustering_agent.generate_result(embeddings)
+        self.results.insertResult(person_id, result)
+
+    def _compute_results(self):
+        batch_size = 100
+        while True:
+            batch = self.embeddings.getPersonEmbeddingsBatch(self.current_index, batch_size)
+            if not batch:
                 break
             
-            print(f"Computing results for persons {curr_index}-{curr_index + batch_size - 1}...")
-            batch_index = 0 
-
-            while batch_index < batch_size:
-                person_embeddings: list[list[int]] = []
-
-                while (batch_index < batch_size and embedding_batch[batch_index][0] == curr_index):
-                    person_embeddings.append(embedding_batch[batch_index][2])
-                    batch_index += 1
-                
-                length = len(person_embeddings)
-                if length == 0: 
-                    continue
-
-                assert(length == embedding_batch[batch_index - 1][1]) #invariant
-
-                result = self.__clustering_agent.generate_result(person_embeddings)
-                
-                self.results.insertResult(curr_index, result)
-                curr_index += 1
-            
-            self.metadata.update_current_index(curr_index)
-            self.__current_index = curr_index
+            self._process_batch(batch, lambda person: self._compute_results_for_person(person[0], person[2]))
+            self.current_index += len(batch)
+            self.metadata.update_current_index(self.current_index)
             self.conn.commit()
-                
-        assert(curr_index == self.__person_count) #invariant 
 
-        self.metadata.update_current_stage(self.__current_stage + 1)
-        self.metadata.update_current_index(0)
-        self.__current_stage += 1
-        self.__current_index = 0
+        # Update metadata and move to the next stage
+        self._advance_stage()
+
+    def _inverse_index(self):
+        """
+        Generates the inverse index for the results stored in the results table.
+        """
+        if self.current_stage != Stage.INDEXING:
+            return
+
+        batch_size = 100
+        while True:
+            # Fetch a batch of results for processing
+            batch = self.results.getPersonResultsBatch(self.current_index, batch_size)
+            if not batch:
+                break
+
+            # Process each person's results
+            for person_id, result_vector in batch:
+                # Get the topic IDs (indices of 1s in the sparse binary vector)
+                topic_ids = [idx for idx, val in enumerate(result_vector) if val == 1]
+                
+                # Add the result vector to the inverse index
+                self.inverseIndex.add_result_vector(topic_ids, person_id, len(topic_ids))
+
+            # Update the current index and commit progress
+            self.current_index += len(batch)
+            self.metadata.update_current_index(self.current_index)
+            self.conn.commit()
+
+        # Update metadata to advance to the next stage
+        self._advance_stage()
+        
+
+    def _advance_stage(self):
+        self.current_stage = Stage(self.current_stage.value + 1)
+        self.metadata.update_current_stage(self.current_stage.value)
+        self.current_index = 0
+        self.metadata.update_current_index(self.current_index)
         self.conn.commit()
-        
-    def get_embedding_table_name(self): 
-        chunking_approach = self.__chunking_agent.name
-        embedding_approach = self.__embedding_agent.name
 
-        return f"embeddings_{chunking_approach}_{embedding_approach}"
 
-    def get_centers_table_name(self): 
-        chunking_approach = self.__chunking_agent.name
-        embedding_approach = self.__embedding_agent.name
-        clustering_approach = self.__clustering_agent.name
-
-        return f"centers_{chunking_approach}_{embedding_approach}_{clustering_approach}"
-
-    def get_results_table_name(self): 
-        chunking_approach = self.__chunking_agent.name
-        embedding_approach = self.__embedding_agent.name
-        clustering_approach = self.__clustering_agent.name
-
-        return f"results_{chunking_approach}_{embedding_approach}_{clustering_approach}"
-                
-    
     def run_research(self):
-        if self.__current_stage == Stage.GENERATING_EMBEDDINGS.value:
-            try:
-                print("Generating Embeddings...")
-                self.__generateEmbeddings()
-                print("Finished Generating Embeddings! Moving on...")
-            except Exception as e: 
-                self.error = e
-                print("An error occured while generating embeddings. Please try again!")
-                print("\tFor more details call flushErrors")
-        else: 
-            print("Embeddings already generated! Moving on...")
+        if self.current_stage == Stage.GENERATING_EMBEDDINGS:
+            self._generate_embeddings()
 
-        if self.__current_stage == Stage.CLUSTERING.value:
-            try:
-                print("Training Clusters...")
-                self.__train_clusters()
-                print("Finished Training Clusters! Moving on...")
-            except Exception as e: 
-                self.error = e
-                print("An error occured while generating embeddings. Please try again!")
-                print("\tFor more details call flushErrors")
-        else: 
-            print("Clusters already trained! Moving on...")
+        if self.current_stage == Stage.COMPUTING_RESULTS:
+            self._train_clusters()
+            self._compute_results()
+
+        if self.current_stage == Stage.INDEXING: 
+            self._inverse_index()
+
+        print("Research process completed successfully!")
+
+        #except Exception as e:
+        #    self.error = e
+        #   print("An error occurred:", e)
+
+    def query(self, query: str): 
+        query = query.strip()
+        if not query:
+            return []
+        chunks: list[str] = self.chunking_agent.chunk(query)
+        embeddings: list[list[int]] = [self.embedding_agent.embed(c) for c in chunks]
+        result: list[int] = self.clustering_agent.generate_result(embeddings)
+        topics = [i for i, x in enumerate(result) if x == 1]
+        matches = self.inverseIndex.get_all_documents_by_topics(topics, False)
+        counter = Counter(matches)
+        return [e[0] for e in counter.most_common()]
         
-        if self.__current_stage == Stage.COMPUTING_RESULTS.value:
-            try:
-                print("Computing Results...")
-                self.__compute_results()
-                print("Finished Computing Results!")
-            except Exception as e: 
-                self.error = e
-                print("An error occured while generating embeddings. Please try again!")
-                print("\tFor more details call flushErrors")
-        else:
-            print("Results already computed! Nothing to be done!")
-        
-        self.__closeConnection()
-        
-        print("DONE!")

@@ -6,6 +6,7 @@ from .persons import Persons
 from .metadata import MetaData
 from .person import generatePerson
 from .setup import initialize_database_tables
+from .openAi import generateDescription
 
 ##Status codes
 class Stage(Enum):
@@ -66,8 +67,8 @@ class DatasetGenerator():
             print(f"Generating Descriptions for rows {curr_index}-{curr_index + batch_size - 1}...")
             for _, row in csv.iterrows():
                 person = generatePerson(row)
-                description = person.generateDescription()
-                self.persons.insertDescription(curr_index, description)
+                llm_description = generateDescription(person.generateDescription())
+                self.persons.insertDescription(curr_index, llm_description)
                 curr_index += 1
             
             self.metadata.update_current_index(curr_index)

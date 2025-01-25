@@ -2,16 +2,15 @@ import openai
 from dotenv import load_dotenv
 import os
 
-#load_dotenv()
+load_dotenv("/home/cirons2003/senior-thesis/senior_thesis/.env")
+
 
 client = openai.OpenAI(api_key=os.getenv("OPEN_AI_KEY")); 
+context = "Generate a self-description of this person. Stay consise and aim for each sentence to demonstrate a specific interest, value, or lifestyle detail of the person. Feel free to make things up but dont ramble."
+print(context)
 
-def generateDescription(attributes):
-    context = "Based on the provided details about this person, generate a self-description paragraph in their voice. \
-    Ensure the paragraph aligns logically with the input, \
-    and avoids generic phrases. Focus on creating a concise but meaningful description that reflects the person's \
-    Highlight their key interests, values, and defining traits."
-    
+def generateDescription(attributes: str):
+
     response = client.chat.completions.create(
         model='gpt-3.5-turbo',
         messages=[

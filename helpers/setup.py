@@ -2,6 +2,9 @@ import sqlite3
 
 ##Throws errors
 def initialize_database_tables (conn: sqlite3.Connection):
+    if conn.in_transaction:
+        conn.rollback()
+
     tables = [
         """
         CREATE TABLE IF NOT EXISTS persons (
@@ -13,10 +16,14 @@ def initialize_database_tables (conn: sqlite3.Connection):
         CREATE TABLE IF NOT EXISTS metadata (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             trial_name TEXT UNIQUE NOT NULL,
+            embeddings_table_name TEXT NOT NULL DEFAULT "", 
+            results_table_name TEXT NOT NULL DEFAULT "", 
+            index_table_name TEXT NOT NULL DEFAULT "",
             current_stage INTEGER DEFAULT 0,
             current_index INTEGER DEFAULT 0,
             current_epoch INTEGER DEFAULT 0,
-            person_count INTEGER DEFAULT 0,
+            person_count INTEGER DEFAULT 0, 
+            topic_count INTEGER DEFAULT 0
         )
         """
     ]
@@ -71,7 +78,7 @@ def initialize_embeddings_table(conn: sqlite3.Connection, table_name: str)-> Non
     """
 
     cursor.execute(query)
-    cursor.execute("CREATE INDEX idx_embedding_composite ON embeddings(embedding_id, total_embeddings);") #optimization for sampling
+    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_embedding_composite ON {table_name}(embedding_id, total_embeddings);") #optimization for sampling
     conn.commit()
 
 def initialize_centers_table(conn: sqlite3.Connection, table_name: str) -> None:
@@ -80,7 +87,7 @@ def initialize_centers_table(conn: sqlite3.Connection, table_name: str) -> None:
     query = f"""
     CREATE TABLE IF NOT EXISTS {table_name} (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        embedding BLOB NOT NULL                  
+        center BLOB NOT NULL                  
     )
     """
 
@@ -103,3 +110,20 @@ def initialize_results_table(conn: sqlite3.Connection, table_name: str) -> None:
     cursor.execute(query)
     conn.commit()
 
+
+def initialize_index_table(conn: sqlite3.Connection, table_name: str) -> None: 
+    cursor = conn.cursor()
+
+    query = f"""
+    CREATE TABLE IF NOT EXISTS {table_name} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        topic_id INTEGER NOT NULL,
+        person_id INTEGER NOT NULL,
+        feature_count INTEGER NOT NULL,
+        FOREIGN KEY (person_id) REFERENCES persons (id)
+            ON DELETE CASCADE  
+    )
+    """ 
+    cursor.execute(query)
+    cursor.execute(f'CREATE INDEX IF NOT EXISTS idx_topic_person ON {table_name}(topic_id, person_id)')
+    conn.commit()
