@@ -2,6 +2,7 @@ import sqlite3
 from enum import Enum
 import random
 from typing import List
+import logging
 
 from .metadata import MetaData
 from .persons import Persons
@@ -11,6 +12,12 @@ from .prototypes import ChunkingAgent, EmbeddingAgent, ClusteringAgent
 from .setup import initialize_embeddings_table, initialize_centers_table, initialize_results_table, initialize_index_table
 from .inverseIndex import InverseIndex
 from collections import Counter
+
+logging.basicConfig(
+    filename="research_runner.log", 
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 class Stage(Enum):
     GENERATING_EMBEDDINGS = 0
@@ -161,9 +168,37 @@ class ResearchRunner:
 
         # Update metadata to advance to the next stage
         self._advance_stage()
-        
 
+    def _table_exists(self, table_name: str) -> bool:
+        """Checks if a table exists in the database."""
+        query = f"SELECT 1 from {table_name} LIMIT 1"
+        return self.conn.execute(query).fetchone() != None
+        
     def _advance_stage(self):
+        """Moves to the next stage, checking for reusable tables on the first transition."""
+        if self.current_stage == Stage.GENERATING_EMBEDDINGS:
+            if self._table_exists(self._get_embedding_table_name()):
+                logging.info(f"✅ Reusing existing embeddings table: {self._get_embedding_table_name()}")
+                print(f"✅ Reusing existing embeddings table: {self._get_embedding_table_name()}")
+            else:
+                self._generate_embeddings()
+        
+        if self.current_stage == Stage.COMPUTING_RESULTS:
+            if self._table_exists(self._get_results_table_name()):
+                logging.info(f"✅ Reusing existing results table: {self._get_results_table_name()}")
+                print(f"✅ Reusing existing results table: {self._get_results_table_name()}")
+            else:
+                self._train_clusters()
+                self._compute_results()
+
+        if self.current_stage == Stage.INDEXING:
+            if self._table_exists(self._get_index_table_name()):
+                logging.info(f"✅ Reusing existing index table: {self._get_index_table_name()}")
+                print(f"✅ Reusing existing index table: {self._get_index_table_name()}")
+            else:
+                self._inverse_index()
+
+        # Move to the next stage
         self.current_stage = Stage(self.current_stage.value + 1)
         self.metadata.update_current_stage(self.current_stage.value)
         self.current_index = 0
@@ -172,21 +207,11 @@ class ResearchRunner:
 
 
     def run_research(self):
-        if self.current_stage == Stage.GENERATING_EMBEDDINGS:
-            self._generate_embeddings()
-
-        if self.current_stage == Stage.COMPUTING_RESULTS:
-            self._train_clusters()
-            self._compute_results()
-
-        if self.current_stage == Stage.INDEXING: 
-            self._inverse_index()
-
-        print("Research process completed successfully!")
-
-        #except Exception as e:
-        #    self.error = e
-        #   print("An error occurred:", e)
+        logging.info("🚀 Starting Research Pipeline...")
+        print("🚀 Starting Research Pipeline...")
+        self._advance_stage()
+        logging.info("✅ Research Completed!")
+        print("✅ Research Completed!")
 
     def query(self, query: str): 
         query = query.strip()

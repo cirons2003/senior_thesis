@@ -1,4 +1,5 @@
 import random 
+import math 
 
 class Person():
     def __init__(self): 
@@ -13,6 +14,7 @@ class Person():
         self.smokes = ""
        
         self.essays = []
+        self.description = ""
 
         self.query = ""
 
@@ -59,50 +61,55 @@ class Person():
         if (len(self.essays) == 0):
             return
 
-        descriptionStartText = "The first essay is " 
+        descriptionStartText = "The first essay is: " 
         essayDelimiter = "The next essay is: "
 
-        self.description = descriptionStartText + self.essays[0]
+        self.description = descriptionStartText + '"' + self.essays[0] + '" '
         for essay in self.essays[1:]: 
-            self.description += essayDelimiter
-            self.description += essay
+            if validateString(essay):
+                self.description += essayDelimiter
+                self.description += '"' + essay + '" '
 
     def setEssays(self, essays): 
         for essay in essays: 
-            if essay != "":
+            if essay and validateString(essay):
                 self.essays.append(essay)
 
     def generateDescription(self): 
         self.query = ""
         
-        if self.gender != "" and self.age != "":
+        if validateString(self.gender) and validateString(self.age):
             self.query += "This person is a " + self.age + " year old " + self.gender + ". "
         else: 
             return "Insufficient information"
 
-        if self.job != "" and random.random() <= self.includeJob:
+        if validateString(self.job) and random.random() <= self.includeJob:
             self.query += "They work in " + self.job + '. '
 
-        if self.drugs != "" and random.random() <= self.includeDrugs :
+        if validateString(self.drugs) and random.random() <= self.includeDrugs :
             self.query += "They " + self.drugs + " do drugs. "
 
-        if self.drinks != "" and random.random() <= self.includeDrinks:
+        if validateString(self.drinks) and random.random() <= self.includeDrinks:
             self.query += "They " + self.drinks + " drink alcohol. "
 
-        if self.smokes != "" and random.random() <= self.includeSmokes:
+        if validateString(self.smokes) and random.random() <= self.includeSmokes:
             self.query += "Their smoking status: " + self.smokes + ". "
 
-        if self.pets != "" and random.random() <= self.includePets: 
+        if validateString(self.pets) and random.random() <= self.includePets: 
             self.query += "This person " + self.pets + ". "
 
-        if self.religion != "" and random.random() <= self.includeReligion:
+        if validateString(self.religion) and random.random() <= self.includeReligion:
             self.query += "Their religion is " + self.religion + ". "
             
         self.__createFreestyle()
-        if self.description != "":
+        if self.description:
             self.query += "They included the following essay responses for unknown prompts..." + self.description + ". "
         return self.query
     
+def validateString(string: str):
+    if not string or isinstance(string, float): 
+        return False
+    return True
 
 def generatePerson(row) -> Person:
     person = Person()
