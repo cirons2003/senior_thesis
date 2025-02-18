@@ -9,7 +9,7 @@ class Persons():
         cursor = self.conn.cursor()
         cursor.execute(f"INSERT OR REPLACE INTO persons (id, description) VALUES (?, ?)", (person_id, description, ))
 
-    def getDescriptionBatch(self, row_index: int, batch_size: int) -> list[list]:
+    def getDescriptionBatch(self, row_index: int, batch_size: int) -> list[tuple[int, str]]:
         cursor = self.conn.cursor()
         cursor.execute(f"SELECT id, description FROM persons WHERE id >= {row_index} LIMIT {batch_size}")
         return cursor.fetchall() 

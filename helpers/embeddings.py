@@ -22,13 +22,33 @@ class Embeddings():
         self.table_name = table_name
         self.conn = conn
 
-    def insertEmbedding(self, person_index: int, embedding: list[int], embedding_id: int, total_embeddings: int) -> None: 
-            cursor = self.conn.cursor()
+    import pickle
 
-            embedding_blob = pickle.dumps(embedding)
+    def insertEmbeddings(self, person_ids: list[int], sizes: list[int], embedding_ids: list[int], embeddings: list[list[float]]) -> None:
+        """
+        Inserts a batch of embeddings for a person into the database.
 
-            cursor.execute(f"""INSERT INTO {self.table_name} (person_id, embedding_id, total_embeddings, embedding) 
-                           VALUES (?, ?, ?, ?)""", (person_index, embedding_id, total_embeddings, embedding_blob,))
+        Args:
+            person_index (int): ID of the person the embeddings belong to.
+            embeddings (list[list[int]]): List of embeddings to insert.
+            total_embeddings (int): Total number of embeddings for this person.
+        """
+        cursor = self.conn.cursor()
+
+        # Convert embeddings to blobs
+        embedding_data = [
+            (person_ids[i], embedding_ids[i], sizes[i], pickle.dumps(embeddings[i]))
+            for i in range(len(person_ids))
+        ]
+
+        # Use executemany() for batch insertion
+        cursor.executemany(f"""
+            INSERT INTO {self.table_name} (person_id, embedding_id, total_embeddings, embedding) 
+            VALUES (?, ?, ?, ?)
+        """, embedding_data)
+
+        self.conn.commit()  # Commit the transaction
+
     
     def getEmbeddingBatch(self, start_row: int, batch_size: int, epoch: int) -> tuple[int, list[list[int]]]:
         cursor = self.conn.cursor()
@@ -45,6 +65,10 @@ class Embeddings():
         return last_id, embeddings
     
     def getPersonEmbeddingsBatch(self, start_id: int, batch_size: int) -> list[tuple[int, int, list[list[int]]]]:
+        """
+        Gets person embeddings tuples for people between [start_id, start_id + batch_size - 1]
+        Tuple of form (person_id, total_embeddings, embeddings)
+        """
         cursor = self.conn.cursor()
 
         cursor.execute(f"""SELECT person_id, total_embeddings, embedding FROM {self.table_name} 
@@ -60,7 +84,11 @@ class Embeddings():
                 people_embeddings.append([res[0], res[1], []])
             
             people_embeddings[-1][2].append(pickle.loads(res[2]))
-             
+
+        # assert lengths check out 
+        for etup in people_embeddings:
+            assert etup[1] == len(etup[2])    
+        
         return people_embeddings
     
 

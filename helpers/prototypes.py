@@ -14,7 +14,7 @@ class EmbeddingAgent(Protocol):
     name: str
 
     ## Generate a text embedding for a piece of text 
-    def embed(self, raw_text: str) -> list[int]:
+    def embed(self, raw_text: list[str]) -> list[list[float]]:
         ...
     
 ## Clustering agents implement the topic learning step. 
@@ -31,7 +31,7 @@ class ClusteringAgent(Protocol):
         ...
 
     ## Get result vector for a set of person embeddings
-    def generate_result(self, person_embeddings: list[int]) -> list[int]:
+    def generate_result(self, person_embeddings: list[list[float]]) -> list[int]:
         ...
 
     ## True if train has been called previously 
